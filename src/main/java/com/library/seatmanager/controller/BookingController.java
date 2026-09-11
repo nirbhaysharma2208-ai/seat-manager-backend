@@ -1,8 +1,6 @@
 package com.library.seatmanager.controller;
 
-import com.library.seatmanager.dto.BookingRequest;
-import com.library.seatmanager.dto.BulkBookingRequest;
-import com.library.seatmanager.dto.StudentCreateRequest;
+import com.library.seatmanager.dto.*;
 import com.library.seatmanager.entity.Admin;
 import com.library.seatmanager.entity.Library;
 import com.library.seatmanager.entity.Seat;
@@ -46,7 +44,7 @@ public class BookingController {
     private AdminRepository adminRepo;
 
     @PostMapping()
-    public ResponseEntity<String> bookSeat( Authentication authentication,  @RequestBody BookingRequest req) {
+    public ResponseEntity<BookingResponse> bookSeat(Authentication authentication, @RequestBody BookingRequest req) {
 
 
          // 🔐 Get logged-in phone from JWT
@@ -75,7 +73,7 @@ public class BookingController {
         if (activeStudent.isPresent()) {
             return ResponseEntity
                     .status(HttpStatus.CONFLICT)
-                    .body("Seat already occupied");
+                    .body(new BookingResponse("Seat already Occupied"));
         }
 
         // 3️⃣ Create student
@@ -94,7 +92,15 @@ public class BookingController {
 
         studentRepo.save(student);
 
-        return ResponseEntity.ok("Seat booked successfully");
+        StudentResponseDTO response =
+                StudentResponseDTO.fromStudent(student);
+
+
+
+        return ResponseEntity.ok(new BookingResponse(
+                "Seat booked successfully",
+                response
+        ));
     }
 
 

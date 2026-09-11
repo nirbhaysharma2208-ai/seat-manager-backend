@@ -12,6 +12,7 @@ public class StudentTableResponse {
     private String phone;
     private int seatNumber;
     private LocalDateTime startDate;
+    private LocalDate bookingDate;
     private LocalDateTime endDate;
     private LocalDate expireDate;
     private int amount;
@@ -23,10 +24,20 @@ public class StudentTableResponse {
         dto.setPhone(s.getPhone());
         dto.setSeatNumber(s.getSeatNumber());
         dto.setStartDate(s.getStartDate());
+        dto.setBookingDate(s.getBookingDate());
         dto.setEndDate(s.getEndDate());
         dto.setAmount(s.getAmountPaid());
         dto.setExpireDate(s.getExpiryDate());
         return dto;
+    }
+
+
+    public LocalDate getBookingDate() {
+        return bookingDate;
+    }
+
+    public void setBookingDate(LocalDate bookingDate) {
+        this.bookingDate = bookingDate;
     }
 
     public Long getId() {
@@ -91,12 +102,13 @@ public class StudentTableResponse {
         this.expireDate = expireDate;
     }
 
-    public StudentTableResponse(Long id, int amount, LocalDate expireDate, LocalDateTime endDate, LocalDateTime startDate, int seatNumber, String phone, String name) {
+    public StudentTableResponse(Long id, int amount, LocalDate expireDate, LocalDateTime endDate, LocalDateTime startDate, LocalDate bookingDate,  int seatNumber, String phone, String name) {
         this.id = id;
         this.amount = amount;
         this.expireDate = expireDate;
         this.endDate = endDate;
         this.startDate = startDate;
+        this.bookingDate=bookingDate;
         this.seatNumber = seatNumber;
         this.phone = phone;
         this.name = name;
@@ -113,7 +125,9 @@ public class StudentTableResponse {
                 ", phone='" + phone + '\'' +
                 ", seatNumber=" + seatNumber +
                 ", startDate=" + startDate +
+                ", bookingDate=" + bookingDate +
                 ", endDate=" + endDate +
+                ", expireDate=" + expireDate +
                 ", amount=" + amount +
                 '}';
     }

@@ -16,11 +16,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -380,7 +383,7 @@ public ResponseEntity<byte[]> exportStudents(
         @PathVariable Long libraryId) {
     
  List<Student> students =
-            studentRepository.findByLibraryId(libraryId);
+         studentRepo.findByLibraryId(libraryId);
 
     try (Workbook workbook = new XSSFWorkbook()) {
 

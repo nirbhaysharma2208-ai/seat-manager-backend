@@ -109,6 +109,8 @@ public interface StudentRepository extends JpaRepository<Student , Long> {
             Student.StudentType studentType
     );
 
+    List<Student> findByLibraryId(Long libraryId);
+
 
 
 }

@@ -72,9 +72,9 @@ public class BillingController {
         );
     }
 
-    private double calculateAverageMonthlyProfit(Long libraryId) {
+    private int calculateAverageMonthlyProfit(Long libraryId) {
         // simple version: last 6 months
-        double total = 0;
+        int total = 0;
         int count = 0;
 
         LocalDate now = LocalDate.now();
