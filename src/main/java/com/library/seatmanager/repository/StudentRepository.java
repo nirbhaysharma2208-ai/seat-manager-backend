@@ -111,6 +111,6 @@ public interface StudentRepository extends JpaRepository<Student , Long> {
 
     List<Student> findByLibraryId(Long libraryId);
 
-
+    List<Student> findByLibrary_Id(Long libraryId);
 
 }

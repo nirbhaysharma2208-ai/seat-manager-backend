@@ -4,19 +4,16 @@ import com.library.seatmanager.dto.HalfDayStudentResponse;
 import com.library.seatmanager.dto.StudentCreateRequest;
 import com.library.seatmanager.dto.StudentTableResponse;
 import com.library.seatmanager.dto.StudentUpdateRequest;
-import com.library.seatmanager.entity.Admin;
-import com.library.seatmanager.entity.Library;
-import com.library.seatmanager.entity.Seat;
-import com.library.seatmanager.entity.Student;
-import com.library.seatmanager.repository.AdminRepository;
-import com.library.seatmanager.repository.LibraryRepository;
-import com.library.seatmanager.repository.SeatRepository;
-import com.library.seatmanager.repository.StudentRepository;
+import com.library.seatmanager.entity.*;
+import com.library.seatmanager.repository.*;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.transaction.Transactional;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -25,10 +22,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/student")
@@ -46,6 +44,9 @@ public class StudentController {
 
     @Autowired
     private AdminRepository adminRepo;
+
+    @Autowired
+    private SeatChangeHistoryRepository seatChangeHistoryRepo;
 
 
     @GetMapping("/library/{libraryId}")
@@ -82,22 +83,41 @@ public class StudentController {
 
 
     @PutMapping("/{seatNumber}/library/{libraryId}")
-    public ResponseEntity<String> updateStudent( Authentication auth,
+    public ResponseEntity<String> updateStudent(
+            Authentication auth,
             @PathVariable Long libraryId,
             @PathVariable int seatNumber,
             @RequestBody StudentUpdateRequest req) {
 
+        // ==========================================
+        // AUTHENTICATION
+        // ==========================================
 
         String phone = auth.getName();
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
+
+        adminRepo.findByPhone(phone)
+                .orElseThrow(() ->
+                        new RuntimeException("Admin not found")
+                );
+
+
+        // ==========================================
+        // FIND CURRENT STUDENT
+        // ==========================================
 
         Student student = studentRepo
                 .findBySeat_Library_IdAndSeat_SeatNumberAndActiveTrue(
                         libraryId,
                         seatNumber
                 )
-                .orElseThrow(() -> new RuntimeException("Student not found"));
+                .orElseThrow(() ->
+                        new RuntimeException("Student not found")
+                );
+
+
+        // ==========================================
+        // UPDATE BASIC DETAILS
+        // ==========================================
 
         if (req.getName() != null) {
             student.setName(req.getName());
@@ -107,56 +127,264 @@ public class StudentController {
             student.setPhone(req.getPhone());
         }
 
-        if (student.getSeatNumber() != req.getSeatNumber()) {
 
-            System.out.println("Old Seat no : " + student.getSeatNumber() + " and new Seat no : " +req.getSeatNumber() );
+        // ==========================================
+        // SEAT CHANGE
+        // ==========================================
 
-            try {
-                // 1️⃣ Free old seat
-                Seat oldSeat = seatRepo.findByLibraryIdAndSeatNumber(libraryId, student.getSeatNumber())
-                        .orElseThrow(() -> new RuntimeException("Old seat not found"));
-                oldSeat.setOccupied(false);
-                seatRepo.save(oldSeat);
-
-                // 2️⃣ Assign new seat
-                Seat newSeat = seatRepo.findByLibraryIdAndSeatNumber(libraryId, req.getSeatNumber())
-                        .orElseThrow(() -> new RuntimeException("New seat not found"));
+        Integer oldSeatNumber = student.getSeatNumber();
+        Integer newSeatNumber = req.getSeatNumber();
 
 
-                if (newSeat.isOccupied()) {
-                    throw new RuntimeException("Seat already occupied");
-                }
+        if (newSeatNumber != null
+                && oldSeatNumber != null
+                && !oldSeatNumber.equals(newSeatNumber)) {
 
-                newSeat.setOccupied(true);
-                seatRepo.save(newSeat);
-                student.setSeat(newSeat);
-                student.setSeatNumber(newSeat.getSeatNumber());
+            System.out.println(
+                    "Seat change requested: "
+                            + oldSeatNumber
+                            + " -> "
+                            + newSeatNumber
+            );
+
+
+            // ==========================================
+            // FIND OLD SEAT
+            // ==========================================
+
+            Seat oldSeat = seatRepo
+                    .findByLibraryIdAndSeatNumber(
+                            libraryId,
+                            oldSeatNumber
+                    )
+                    .orElseThrow(() ->
+                            new RuntimeException(
+                                    "Old seat not found"
+                            )
+                    );
+
+
+            // ==========================================
+            // FIND NEW SEAT
+            // ==========================================
+
+            Seat newSeat = seatRepo
+                    .findByLibraryIdAndSeatNumber(
+                            libraryId,
+                            newSeatNumber
+                    )
+                    .orElseThrow(() ->
+                            new RuntimeException(
+                                    "New seat not found"
+                            )
+                    );
+
+
+            // ==========================================
+            // CHECK NEW SEAT
+            // ==========================================
+
+            if (newSeat.isOccupied()) {
+
+                throw new RuntimeException(
+                        "Seat "
+                                + newSeatNumber
+                                + " is already occupied"
+                );
             }
-            catch (Exception e){
-                if (req.getSeatNumber() != null) {
-                    student.setSeatNumber(req.getSeatNumber());
-                }
-            }
+
+
+            // ==========================================
+            // FREE OLD SEAT
+            // ==========================================
+
+            oldSeat.setOccupied(false);
+
+            seatRepo.save(oldSeat);
+
+
+            // ==========================================
+            // OCCUPY NEW SEAT
+            // ==========================================
+
+            newSeat.setOccupied(true);
+
+            seatRepo.save(newSeat);
+
+
+            // ==========================================
+            // UPDATE STUDENT
+            // ==========================================
+
+            student.setSeat(newSeat);
+
+            student.setSeatNumber(
+                    newSeat.getSeatNumber()
+            );
+
+
+            // ==========================================
+            // SAVE SEAT CHANGE HISTORY
+            // ==========================================
+
+            SeatChangeHistory history =
+                    new SeatChangeHistory();
+
+            history.setStudent(student);
+
+            history.setLibrary(
+                    student.getLibrary()
+            );
+
+            history.setOldSeatNumber(
+                    oldSeatNumber
+            );
+
+            history.setNewSeatNumber(
+                    newSeatNumber
+            );
+
+            history.setChangedAt(
+                    LocalDateTime.now()
+            );
+
+            seatChangeHistoryRepo.save(history);
+
+
+            System.out.println(
+                    "Seat history saved: "
+                            + oldSeatNumber
+                            + " -> "
+                            + newSeatNumber
+            );
         }
 
 
+        // ==========================================
+        // UPDATE END DATE
+        // ==========================================
 
         if (req.getEndDate() != null) {
-            student.setEndDate(req.getEndDate());
-        }
-        if (req.getExpireDate() != null) {
-            System.out.println("request ExpiredDate  : " + req.getExpireDate());
-            student.setExpiryDate(req.getExpireDate());
 
+            student.setEndDate(
+                    req.getEndDate()
+            );
         }
+
+
+        // ==========================================
+        // UPDATE EXPIRY DATE
+        // ==========================================
+
+        if (req.getExpireDate() != null) {
+
+            student.setExpiryDate(
+                    req.getExpireDate()
+            );
+        }
+
+
+        // ==========================================
+        // SAVE STUDENT
+        // ==========================================
 
         studentRepo.save(student);
 
-        System.out.println("Student s : " + student.getExpiryDate());
-        System.out.println("Student new Seat no : " + student.getSeatNumber());
-        return ResponseEntity.ok("Student updated");
+
+        System.out.println(
+                "Student updated: "
+                        + student.getName()
+        );
+
+        System.out.println(
+                "Current seat: "
+                        + student.getSeatNumber()
+        );
+
+
+        return ResponseEntity.ok(
+                "Student updated"
+        );
     }
 
+
+    @GetMapping("/{studentId}/seat-history/library/{libraryId}")
+    public ResponseEntity<?> getSeatChangeHistory(
+            Authentication auth,
+            @PathVariable Long studentId,
+            @PathVariable Long libraryId) {
+
+        // ==========================================
+        // AUTHENTICATION
+        // ==========================================
+
+        String phone = auth.getName();
+
+        adminRepo.findByPhone(phone)
+                .orElseThrow(() ->
+                        new RuntimeException("Admin not found")
+                );
+
+
+        // ==========================================
+        // GET HISTORY
+        // ==========================================
+
+        List<SeatChangeHistory> history =
+                seatChangeHistoryRepo
+                        .findByStudentIdOrderByChangedAtDesc(
+                                studentId
+                        );
+
+
+        // ==========================================
+        // CONVERT TO RESPONSE
+        // ==========================================
+
+        List<Map<String, Object>> response =
+                history.stream()
+
+                        // Only history belonging to this library
+                        .filter(h ->
+                                h.getLibrary() != null
+                                        && h.getLibrary()
+                                        .getId()
+                                        .equals(libraryId)
+                        )
+
+                        .map(h -> {
+
+                            Map<String, Object> item =
+                                    new LinkedHashMap<>();
+
+                            item.put(
+                                    "id",
+                                    h.getId()
+                            );
+
+                            item.put(
+                                    "oldSeat",
+                                    h.getOldSeatNumber()
+                            );
+
+                            item.put(
+                                    "newSeat",
+                                    h.getNewSeatNumber()
+                            );
+
+                            item.put(
+                                    "changedAt",
+                                    h.getChangedAt()
+                            );
+
+                            return item;
+                        })
+
+                        .toList();
+
+
+        return ResponseEntity.ok(response);
+    }
 
 
 //  filter the student by name , phone, seat
@@ -287,6 +515,7 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
                     .findByLibraryIdAndSeatNumber(libraryId, req.getSeatNumber())
                     .orElseThrow(() -> new RuntimeException("Seat not found in this library"));
 
+
             if (seat.isOccupied()) {
                 throw new RuntimeException("Seat already occupied");
             }
@@ -345,137 +574,856 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
                 .toList();
     }
 
+    @GetMapping("/export/library/{libraryId}")
+    public ResponseEntity<byte[]> exportStudents(
+            @PathVariable Long libraryId) {
+
+        List<Student> students =
+                studentRepo.findByLibrary_Id(libraryId);
+
+        try (Workbook workbook = new XSSFWorkbook()) {
+
+            Sheet sheet = workbook.createSheet("Students");
+
+            /*
+             * ==========================================
+             * HEADER
+             * ==========================================
+             */
+
+            String[] headers = {
+                    "ID",
+                    "Name",
+                    "Phone",
+                    "Seat Number",
+                    "Booking Date",
+                    "Expiry Date",
+                    "Start Date",
+                    "End Date",
+                    "Amount",
+                    "Amount Paid",
+                    "Active",
+                    "Student Type",
+                    "Half Day Slot"
+            };
+
+            Row headerRow = sheet.createRow(0);
+
+            CellStyle headerStyle = workbook.createCellStyle();
+
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+
+            headerStyle.setFont(headerFont);
+            headerStyle.setAlignment(
+                    HorizontalAlignment.CENTER
+            );
+
+            for (int i = 0; i < headers.length; i++) {
+
+                Cell cell = headerRow.createCell(i);
+
+                cell.setCellValue(headers[i]);
+
+                cell.setCellStyle(headerStyle);
+            }
+
+            CellStyle dateStyle = workbook.createCellStyle();
+
+            CreationHelper creationHelper =
+                    workbook.getCreationHelper();
+
+            dateStyle.setDataFormat(
+                    creationHelper
+                            .createDataFormat()
+                            .getFormat("dd/MM/yyyy")
+            );
 
 
-    @GetMapping("/export")
-    public void exportExcel(HttpServletResponse response) throws IOException {
+            CellStyle dateTimeStyle =
+                    workbook.createCellStyle();
 
-        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setHeader("Content-Disposition", "attachment; filename=students.xlsx");
+            dateTimeStyle.setDataFormat(
+                    creationHelper
+                            .createDataFormat()
+                            .getFormat("dd/MM/yyyy HH:mm")
+            );
 
-        List<Student> students = studentRepo.findAll();
 
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Students");
+            int rowNum = 1;
 
-        Row header = sheet.createRow(0);
-        header.createCell(0).setCellValue("Name");
-        header.createCell(1).setCellValue("Phone");
-        header.createCell(2).setCellValue("Seat");
-        header.createCell(3).setCellValue("EndDate");
+            for (Student student : students) {
 
-        int rowCount = 1;
+                Row row = sheet.createRow(rowNum++);
 
-        for (Student s : students) {
-            Row row = sheet.createRow(rowCount++);
-            row.createCell(0).setCellValue(s.getName());
-            row.createCell(1).setCellValue(s.getPhone());
-            row.createCell(2).setCellValue(s.getSeatNumber());
-            row.createCell(3).setCellValue(s.getEndDate().toString());
+
+                // ID
+                if (student.getId() != null) {
+                    row.createCell(0)
+                            .setCellValue(student.getId());
+                }
+
+
+                // Name
+                row.createCell(1)
+                        .setCellValue(
+                                student.getName() != null
+                                        ? student.getName()
+                                        : ""
+                        );
+
+
+                // Phone
+                row.createCell(2)
+                        .setCellValue(
+                                student.getPhone() != null
+                                        ? student.getPhone()
+                                        : ""
+                        );
+
+
+                // Seat Number
+                if (student.getSeatNumber() != null) {
+                    row.createCell(3)
+                            .setCellValue(
+                                    student.getSeatNumber()
+                            );
+                }
+
+
+                // Booking Date
+                if (student.getBookingDate() != null) {
+
+                    Cell cell = row.createCell(4);
+
+                    cell.setCellValue(
+                            java.sql.Date.valueOf(
+                                    student.getBookingDate()
+                            )
+                    );
+
+                    cell.setCellStyle(dateStyle);
+                }
+
+
+                // Expiry Date
+                if (student.getExpiryDate() != null) {
+
+                    Cell cell = row.createCell(5);
+
+                    cell.setCellValue(
+                            java.sql.Date.valueOf(
+                                    student.getExpiryDate()
+                            )
+                    );
+
+                    cell.setCellStyle(dateStyle);
+                }
+
+
+                // Start Date
+                if (student.getStartDate() != null) {
+
+                    Cell cell = row.createCell(6);
+
+                    cell.setCellValue(
+                            java.sql.Timestamp.valueOf(
+                                    student.getStartDate()
+                            )
+                    );
+
+                    cell.setCellStyle(dateTimeStyle);
+                }
+
+
+                // End Date
+                if (student.getEndDate() != null) {
+
+                    Cell cell = row.createCell(7);
+
+                    cell.setCellValue(
+                            java.sql.Timestamp.valueOf(
+                                    student.getEndDate()
+                            )
+                    );
+
+                    cell.setCellStyle(dateTimeStyle);
+                }
+
+
+                // Amount
+                row.createCell(8)
+                        .setCellValue(student.getAmount());
+
+
+                // Amount Paid
+                row.createCell(9)
+                        .setCellValue(student.getAmountPaid());
+
+
+                // Active
+                row.createCell(10)
+                        .setCellValue(
+                                student.isActive()
+                                        ? "Active"
+                                        : "Expired"
+                        );
+
+
+                // Student Type
+                row.createCell(11)
+                        .setCellValue(
+                                student.getStudentType() != null
+                                        ? student.getStudentType().name()
+                                        : ""
+                        );
+
+
+                // Half Day Slot
+                row.createCell(12)
+                        .setCellValue(
+                                student.getHalfDaySlot() != null
+                                        ? student.getHalfDaySlot().name()
+                                        : ""
+                        );
+            }
+
+            // Freeze header
+            sheet.createFreezePane(0, 1);
+
+            // Enable filter
+            sheet.setAutoFilter(
+                    new CellRangeAddress(
+                            0,
+                            students.size(),
+                            0,
+                            headers.length - 1
+                    )
+            );
+
+
+            // Auto-size columns
+            for (int i = 0; i < headers.length; i++) {
+
+                sheet.autoSizeColumn(i);
+
+                // Prevent extremely wide columns
+                if (sheet.getColumnWidth(i) > 12000) {
+                    sheet.setColumnWidth(i, 12000);
+                }
+            }
+            /*
+             * ==========================================
+             * CREATE EXCEL FILE
+             * ==========================================
+             */
+
+            ByteArrayOutputStream outputStream =
+                    new ByteArrayOutputStream();
+
+            workbook.write(outputStream);
+
+            byte[] excelFile =
+                    outputStream.toByteArray();
+
+            return ResponseEntity.ok()
+                    .header(
+                            HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=students.xlsx"
+                    )
+                    .contentType(
+                            MediaType.parseMediaType(
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                    )
+                    .body(excelFile);
+
+        } catch (IOException e) {
+
+            throw new RuntimeException(
+                    "Failed to export students to Excel",
+                    e
+            );
         }
-
-        workbook.write(response.getOutputStream());
-        workbook.close();
     }
 
-   @GetMapping("/export/library/{libraryId}")
-public ResponseEntity<byte[]> exportStudents(
-        @PathVariable Long libraryId) {
-    
- List<Student> students =
-         studentRepo.findByLibraryId(libraryId);
+    @PostMapping("/import/library/{libraryId}")
+    public ResponseEntity<?> importStudents(
+            @PathVariable Long libraryId,
+            @RequestParam("file") MultipartFile file) {
 
-    try (Workbook workbook = new XSSFWorkbook()) {
-
-        Sheet sheet = workbook.createSheet("Students");
-
-        // Header
-        Row headerRow = sheet.createRow(0);
-
-        String[] headers = {
-                "ID",
-                "Name",
-                "Phone",
-                "Seat Number",
-                "Start Date",
-                "End Date",
-                "Amount",
-                "Active"
-        };
-
-        for (int i = 0; i < headers.length; i++) {
-            Cell cell = headerRow.createCell(i);
-            cell.setCellValue(headers[i]);
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("message", "Excel file is required")
+            );
         }
 
-        // Student data
-        int rowNum = 1;
+        try {
 
-        for (Student student : students) {
+            Library library = libraryRepo.findById(libraryId)
+                    .orElseThrow(() ->
+                            new RuntimeException("Library not found: " + libraryId)
+                    );
 
-            Row row = sheet.createRow(rowNum++);
+            int importedCount = 0;
+            int skippedCount = 0;
+            int failedCount = 0;
 
-            row.createCell(0)
-                    .setCellValue(student.getId());
+            List<String> imported = new ArrayList<>();
+            List<String> skipped = new ArrayList<>();
+            List<String> failed = new ArrayList<>();
 
-            row.createCell(1)
-                    .setCellValue(student.getName());
+            // Prevent duplicate seat numbers inside Excel
+            Set<Integer> processedSeats = new HashSet<>();
 
-            row.createCell(2)
-                    .setCellValue(student.getPhone());
+            try (InputStream inputStream = file.getInputStream();
+                 Workbook workbook = WorkbookFactory.create(inputStream)) {
 
-            row.createCell(3)
-                    .setCellValue(student.getSeatNumber());
+                Sheet sheet = workbook.getSheetAt(0);
 
-            if (student.getStartDate() != null) {
-                row.createCell(4)
-                        .setCellValue(student.getStartDate().toString());
+                if (sheet.getPhysicalNumberOfRows() < 2) {
+                    return ResponseEntity.badRequest().body(
+                            Map.of("message", "Excel file contains no student data")
+                    );
+                }
+
+                // ============================================================
+                // READ HEADER ROW
+                // ============================================================
+
+                Row headerRow = sheet.getRow(0);
+
+                if (headerRow == null) {
+                    return ResponseEntity.badRequest().body(
+                            Map.of("message", "Excel header row is missing")
+                    );
+                }
+
+                Map<String, Integer> columns = new HashMap<>();
+
+                for (Cell cell : headerRow) {
+
+                    String header = getCellString(cell);
+
+                    if (header != null) {
+
+                        String normalized =
+                                header.trim()
+                                        .toLowerCase()
+                                        .replace(" ", "")
+                                        .replace("_", "");
+
+                        columns.put(normalized, cell.getColumnIndex());
+                    }
+                }
+
+                // ============================================================
+                // FIND REQUIRED COLUMNS
+                // ============================================================
+
+                Integer nameColumn = findColumn(
+                        columns,
+                        "name",
+                        "studentname",
+                        "student"
+                );
+
+                Integer phoneColumn = findColumn(
+                        columns,
+                        "phone",
+                        "phonenumber",
+                        "mobile",
+                        "mobilenumber"
+                );
+
+                Integer seatColumn = findColumn(
+                        columns,
+                        "seat",
+                        "seatnumber",
+                        "seatno"
+                );
+
+                Integer amountPaidColumn = findColumn(
+                        columns,
+                        "amountpaid",
+                        "paid",
+                        "paidamount"
+                );
+
+
+                // ============================================================
+                // REQUIRED COLUMN CHECK
+                // ============================================================
+
+                if (nameColumn == null) {
+
+                    return ResponseEntity.badRequest().body(
+                            Map.of(
+                                    "message",
+                                    "Name column not found in Excel"
+                            )
+                    );
+                }
+
+                if (seatColumn == null) {
+
+                    return ResponseEntity.badRequest().body(
+                            Map.of(
+                                    "message",
+                                    "Seat / Seat Number column not found in Excel"
+                            )
+                    );
+                }
+
+
+                // ============================================================
+                // PROCESS EVERY EXCEL ROW
+                // ============================================================
+
+                for (int rowIndex = 1;
+                     rowIndex <= sheet.getLastRowNum();
+                     rowIndex++) {
+
+                    Row row = sheet.getRow(rowIndex);
+
+                    if (row == null) {
+                        continue;
+                    }
+
+                    int excelRowNumber = rowIndex + 1;
+
+                    try {
+
+                        // ====================================================
+                        // READ VALUES
+                        // ====================================================
+
+                        String name =
+                                getCellString(
+                                        row.getCell(nameColumn)
+                                );
+
+                        String phone = null;
+
+                        if (phoneColumn != null) {
+                            phone =
+                                    getCellString(
+                                            row.getCell(phoneColumn)
+                                    );
+                        }
+
+                        Integer seatNumber =
+                                getCellInteger(
+                                        row.getCell(seatColumn)
+                                );
+
+                        Integer amountPaid = null;
+
+                        if (amountPaidColumn != null) {
+                            amountPaid =
+                                    getCellInteger(
+                                            row.getCell(amountPaidColumn)
+                                    );
+                        }
+
+
+                        // ====================================================
+                        // EMPTY ROW
+                        // ====================================================
+
+                        if ((name == null || name.isBlank())
+                                && seatNumber == null) {
+
+                            continue;
+                        }
+
+
+                        // ====================================================
+                        // VALIDATION
+                        // ====================================================
+
+                        if (name == null || name.isBlank()) {
+
+                            failedCount++;
+
+                            failed.add(
+                                    "Row " + excelRowNumber +
+                                            ": Student name is missing"
+                            );
+
+                            continue;
+                        }
+
+                        if (seatNumber == null) {
+
+                            failedCount++;
+
+                            failed.add(
+                                    "Row " + excelRowNumber +
+                                            ": Seat number is missing"
+                            );
+
+                            continue;
+                        }
+
+                        if (seatNumber <= 0) {
+
+                            failedCount++;
+
+                            failed.add(
+                                    "Row " + excelRowNumber +
+                                            ": Invalid seat number " +
+                                            seatNumber
+                            );
+
+                            continue;
+                        }
+
+
+                        // ====================================================
+                        // DUPLICATE SEAT IN SAME EXCEL
+                        // ====================================================
+
+                        if (!processedSeats.add(seatNumber)) {
+
+                            skippedCount++;
+
+                            skipped.add(
+                                    "Row " + excelRowNumber +
+                                            ": Seat " + seatNumber +
+                                            " skipped - duplicate seat in Excel"
+                            );
+
+                            continue;
+                        }
+
+
+                        // ====================================================
+                        // FIND SEAT
+                        // ====================================================
+
+                        Optional<Seat> seatOptional =
+                                seatRepo.findByLibraryIdAndSeatNumber(
+                                        libraryId,
+                                        seatNumber
+                                );
+
+                        if (seatOptional.isEmpty()) {
+
+                            failedCount++;
+
+                            failed.add(
+                                    "Row " + excelRowNumber +
+                                            ": Seat " + seatNumber +
+                                            " does not exist in this library"
+                            );
+
+                            continue;
+                        }
+
+                        Seat seat = seatOptional.get();
+
+
+                        // ====================================================
+                        // DATABASE OCCUPANCY CHECK
+                        //
+                        // THIS IS THE MOST IMPORTANT PART
+                        // ====================================================
+
+                        if (seat.isOccupied()) {
+
+                            skippedCount++;
+
+                            skipped.add(
+                                    "Row " + excelRowNumber +
+                                            ": Seat " + seatNumber +
+                                            " skipped - already occupied"
+                            );
+
+                            continue;
+                        }
+
+
+                        // ====================================================
+                        // SECOND SAFETY CHECK
+                        // ====================================================
+
+                        Optional<Student> existingStudent =
+                                studentRepo
+                                        .findBySeat_Library_IdAndSeat_SeatNumberAndActiveTrue(
+                                                libraryId,
+                                                seatNumber
+                                        );
+
+                        if (existingStudent.isPresent()) {
+
+                            skippedCount++;
+
+                            skipped.add(
+                                    "Row " + excelRowNumber +
+                                            ": Seat " + seatNumber +
+                                            " skipped - active student already exists"
+                            );
+
+                            continue;
+                        }
+
+
+                        // ====================================================
+                        // CREATE STUDENT
+                        // ====================================================
+
+                        Student student = new Student();
+
+                        student.setName(name.trim());
+                        student.setPhone(phone);
+
+                        student.setLibrary(library);
+
+                        // Same defaults as normal booking
+                        student.setBookingDate(LocalDate.now());
+                        student.setStartDate(LocalDateTime.now());
+                        student.setExpiryDate(
+                                LocalDate.now().plusDays(30)
+                        );
+
+                        student.setActive(true);
+
+                        // FULL DAY
+                        student.setStudentType(
+                                Student.StudentType.FULL_DAY
+                        );
+
+                        student.setHalfDaySlot(null);
+
+                        // Seat
+                        student.setSeat(seat);
+                        student.setSeatNumber(seatNumber);
+
+                        // Amount Paid
+                         student.setAmountPaid(amountPaid);
+
+
+
+                        // ====================================================
+                        // SAVE STUDENT
+                        // ====================================================
+
+                        studentRepo.save(student);
+
+
+                        // ====================================================
+                        // OCCUPY SEAT
+                        // ====================================================
+
+                        seat.setOccupied(true);
+                        seatRepo.save(seat);
+
+
+                        // ====================================================
+                        // SUCCESS
+                        // ====================================================
+
+                        importedCount++;
+
+                        imported.add(
+                                "Row " + excelRowNumber +
+                                        ": Seat " + seatNumber +
+                                        " imported - " + name
+                        );
+
+                    } catch (Exception rowException) {
+
+                        failedCount++;
+
+                        String errorMessage =
+                                rowException.getMessage();
+
+                        if (errorMessage == null ||
+                                errorMessage.isBlank()) {
+
+                            errorMessage =
+                                    rowException.getClass()
+                                            .getSimpleName();
+                        }
+
+                        // VERY IMPORTANT:
+                        // Print the REAL error in backend console
+                        rowException.printStackTrace();
+
+                        failed.add(
+                                "Row " + excelRowNumber +
+                                        ": " + errorMessage
+                        );
+                    }
+                }
             }
 
-            if (student.getEndDate() != null) {
-                row.createCell(5)
-                        .setCellValue(student.getEndDate().toString());
+
+            // ================================================================
+            // RESPONSE
+            // ================================================================
+
+            Map<String, Object> response =
+                    new LinkedHashMap<>();
+
+            response.put(
+                    "message",
+                    "Import completed"
+            );
+
+            response.put(
+                    "importedCount",
+                    importedCount
+            );
+
+            response.put(
+                    "skippedCount",
+                    skippedCount
+            );
+
+            response.put(
+                    "failedCount",
+                    failedCount
+            );
+
+            response.put(
+                    "imported",
+                    imported
+            );
+
+            response.put(
+                    "skipped",
+                    skipped
+            );
+
+            response.put(
+                    "failed",
+                    failed
+            );
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(
+                            Map.of(
+                                    "message",
+                                    "Import failed",
+                                    "error",
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : e.getClass().getSimpleName()
+                            )
+                    );
+        }
+    }
+    private Integer findColumn(
+            Map<String, Integer> columns,
+            String... names) {
+
+        for (String name : names) {
+
+            String normalized =
+                    name.toLowerCase()
+                            .replace(" ", "")
+                            .replace("_", "");
+
+            if (columns.containsKey(normalized)) {
+                return columns.get(normalized);
             }
-
-            row.createCell(6)
-                    .setCellValue(student.getAmount());
-
-            row.createCell(7)
-                    .setCellValue(student.isActive() ? "Active" : "Expired");
         }
 
-        // Auto-size columns
-        for (int i = 0; i < headers.length; i++) {
-            sheet.autoSizeColumn(i);
+        return null;
+    }
+    private String getCellString(Cell cell) {
+
+        if (cell == null) {
+            return null;
         }
 
-        // Convert workbook to byte[]
-        ByteArrayOutputStream outputStream =
-                new ByteArrayOutputStream();
+        DataFormatter formatter = new DataFormatter();
 
-        workbook.write(outputStream);
+        String value = formatter.formatCellValue(cell);
 
-        byte[] excelFile = outputStream.toByteArray();
-         return ResponseEntity.ok()
-            .header(
-                HttpHeaders.CONTENT_DISPOSITION,
-                "attachment; filename=students.xlsx"
-            )
-            .contentType(
-                MediaType.parseMediaType(
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            )
-            .body(excelFile);
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
 
-    } catch (IOException e) {
+        return value.trim();
+    }
+    private Integer getCellInteger(Cell cell) {
 
-        throw new RuntimeException(
-                "Failed to export students to Excel",
-                e
-        );
-    }  
-}
+        if (cell == null) {
+            return null;
+        }
+
+        if (cell.getCellType() == CellType.NUMERIC) {
+
+            return (int) cell.getNumericCellValue();
+        }
+
+        String value = getCellString(cell);
+
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        try {
+
+            // Handles values like "12" and "12.0"
+            double number = Double.parseDouble(value.trim());
+
+            return (int) number;
+
+        } catch (NumberFormatException e) {
+
+            throw new RuntimeException(
+                    "Invalid seat number: " + value
+            );
+        }
+    }
+    private BigDecimal getCellBigDecimal(Cell cell) {
+
+        if (cell == null) {
+            return null;
+        }
+
+        if (cell.getCellType() == CellType.NUMERIC) {
+
+            return BigDecimal.valueOf(
+                    cell.getNumericCellValue()
+            );
+        }
+
+        String value = getCellString(cell);
+
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        try {
+
+            return new BigDecimal(
+                    value.replace(",", "").trim()
+            );
+
+        } catch (NumberFormatException e) {
+
+            throw new RuntimeException(
+                    "Invalid amount paid: " + value
+            );
+        }
+    }
+
+
+
+
+
 
     private String getString(Cell cell) {
         if (cell == null) return "";
