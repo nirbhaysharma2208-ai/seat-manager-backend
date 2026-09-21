@@ -35,6 +35,7 @@ public class Student {
     private Seat seat;
 
     private boolean active;
+    private LocalDate alertHoldUntil;
 
     @Enumerated(EnumType.STRING)
     private StudentType studentType;
@@ -135,6 +136,14 @@ public class Student {
         this.active = active;
     }
 
+    public LocalDate getAlertHoldUntil() {
+        return alertHoldUntil;
+    }
+
+    public void setAlertHoldUntil(LocalDate alertHoldUntil) {
+        this.alertHoldUntil = alertHoldUntil;
+    }
+
     public Seat getSeat() {
         return seat;
     }
@@ -183,6 +192,7 @@ public class Student {
                 ", amountPaid=" + amountPaid +
                 ", seat=" + seat +
                 ", active=" + active +
+                ", alertHoldUntil=" + alertHoldUntil +
                 ", studentType=" + studentType +
                 ", halfDaySlot=" + halfDaySlot +
                 ", library=" + library +
@@ -193,7 +203,7 @@ public class Student {
     }
 
 
-    public Student(Long id, String name, String phone, Integer seatNumber, int amount, LocalDate bookingDate, LocalDate expiryDate, LocalDateTime startDate, LocalDateTime endDate, int amountPaid, Seat seat, boolean active, StudentType studentType, HalfDaySlot halfDaySlot, Library library) {
+    public Student(Long id, String name, String phone, Integer seatNumber, int amount, LocalDate bookingDate, LocalDate expiryDate, LocalDateTime startDate, LocalDateTime endDate, int amountPaid, Seat seat, boolean active, LocalDate alertHoldUntil, StudentType studentType, HalfDaySlot halfDaySlot, Library library) {
         this.id = id;
         this.name = name;
         this.phone = phone;
@@ -206,6 +216,7 @@ public class Student {
         this.amountPaid = amountPaid;
         this.seat = seat;
         this.active = active;
+        this.alertHoldUntil = alertHoldUntil;
         this.studentType = studentType;
         this.halfDaySlot = halfDaySlot;
         this.library = library;

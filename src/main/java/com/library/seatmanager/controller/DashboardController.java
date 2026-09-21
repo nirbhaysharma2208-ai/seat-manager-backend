@@ -7,11 +7,13 @@ import com.library.seatmanager.repository.AdminRepository;
 import com.library.seatmanager.repository.SeatRepository;
 import com.library.seatmanager.repository.StudentRepository;
 import com.library.seatmanager.service.DashboardService;
+import com.library.seatmanager.service.SecurityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
-import java.util.Map;
+
 
 @RestController
 @RequestMapping("/api")
@@ -30,47 +32,56 @@ public class DashboardController {
     @Autowired
     private AdminRepository adminRepo;
 
+    @Autowired
+    private SecurityService securityService;
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     @GetMapping("/dashboards/{libraryId}")
-    public DashboardResponse getDashboard( Authentication authentication,
+    public DashboardResponse getDashboard(
+            Authentication authentication,
             @PathVariable Long libraryId) {
 
-                 // 🔐 Get logged-in phone from JWT
-        String phone = authentication.getName();
+        // 🔐 Verify user belongs to this library
+        securityService.validateLibraryAccess(
+                libraryId,
+                authentication
+        );
 
-        // 🔍 Find admin
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));  
-                           
-        try{
-                // total seats of this library
-                int totalSeats =
-                seatRepo.countByLibraryId(libraryId);
+        try {
 
+            int totalSeats =
+                    seatRepo.countByLibraryId(libraryId);
 
-                // full day active students of this library
-                long filledSeats =
-                        studentRepo.countBySeat_Library_IdAndStudentTypeAndActiveTrue(
-                                libraryId,
-                                Student.StudentType.FULL_DAY
-                        );
+            long filledSeats =
+                    studentRepo
+                            .countBySeat_Library_IdAndStudentTypeAndActiveTrue(
+                                    libraryId,
+                                    Student.StudentType.FULL_DAY
+                            );
 
-                long halfDayCount =
-                        studentRepo.countByLibrary_IdAndStudentTypeAndActiveTrue(
-                                libraryId,
-                                Student.StudentType.HALF_DAY
-                        );
+            long halfDayCount =
+                    studentRepo
+                            .countByLibrary_IdAndStudentTypeAndActiveTrue(
+                                    libraryId,
+                                    Student.StudentType.HALF_DAY
+                            );
 
-                long vacantSeats = totalSeats - filledSeats;
+            long vacantSeats =
+                    totalSeats - filledSeats;
 
-                return new DashboardResponse(
-                        totalSeats,
-                        filledSeats,
-                        vacantSeats,
-                        halfDayCount
-                );
-        }
-        catch(Exception e){
-            throw new RuntimeException("Error fetching dashboard data: " + e.getMessage());
+            return new DashboardResponse(
+                    totalSeats,
+                    filledSeats,
+                    vacantSeats,
+                    halfDayCount
+            );
+
+        } catch (Exception e) {
+
+            throw new RuntimeException(
+                    "Error fetching dashboard data: "
+                            + e.getMessage()
+            );
         }
     }
 }

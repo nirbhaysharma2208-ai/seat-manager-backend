@@ -1,11 +1,9 @@
 package com.library.seatmanager.controller;
 
-import com.library.seatmanager.dto.HalfDayStudentResponse;
-import com.library.seatmanager.dto.StudentCreateRequest;
-import com.library.seatmanager.dto.StudentTableResponse;
-import com.library.seatmanager.dto.StudentUpdateRequest;
+import com.library.seatmanager.dto.*;
 import com.library.seatmanager.entity.*;
 import com.library.seatmanager.repository.*;
+import com.library.seatmanager.service.SecurityService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
 import org.apache.poi.ss.usermodel.*;
@@ -20,6 +18,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,6 +30,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 @RestController
 @RequestMapping("/api/student")
@@ -43,17 +47,26 @@ public class StudentController {
     private LibraryRepository libraryRepo;
 
     @Autowired
+    private SecurityService securityService;
+
+    @Autowired
     private AdminRepository adminRepo;
 
     @Autowired
     private SeatChangeHistoryRepository seatChangeHistoryRepo;
 
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     @GetMapping("/library/{libraryId}")
     public List<StudentTableResponse> getStudentsByLibrary(
             @PathVariable Long libraryId,
-            Authentication auth
-    ) {
+            Authentication auth) {
+
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
+
         return studentRepo
                 .findBySeat_Library_IdAndActiveTrue(libraryId)
                 .stream()
@@ -61,27 +74,35 @@ public class StudentController {
                 .toList();
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     @GetMapping("/seat/{seatNumber}/library/{libraryId}")
-    public ResponseEntity<Student> getStudentBySeat( Authentication auth,
+    public ResponseEntity<StudentDetailResponse> getStudentBySeat(
+            Authentication auth,
             @PathVariable Long libraryId,
             @PathVariable int seatNumber) {
 
-        String phone = auth.getName();
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
-
-
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
 
         return studentRepo
                 .findBySeat_Library_IdAndSeat_SeatNumberAndActiveTrue(
                         libraryId,
                         seatNumber
                 )
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .map(student ->
+                        ResponseEntity.ok(
+                                new StudentDetailResponse(student)
+                        )
+                )
+                .orElse(
+                        ResponseEntity.notFound().build()
+                );
     }
 
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST')")
     @PutMapping("/{seatNumber}/library/{libraryId}")
     public ResponseEntity<String> updateStudent(
             Authentication auth,
@@ -89,17 +110,10 @@ public class StudentController {
             @PathVariable int seatNumber,
             @RequestBody StudentUpdateRequest req) {
 
-        // ==========================================
-        // AUTHENTICATION
-        // ==========================================
-
-        String phone = auth.getName();
-
-        adminRepo.findByPhone(phone)
-                .orElseThrow(() ->
-                        new RuntimeException("Admin not found")
-                );
-
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
 
         // ==========================================
         // FIND CURRENT STUDENT
@@ -309,6 +323,7 @@ public class StudentController {
 
 
     @GetMapping("/{studentId}/seat-history/library/{libraryId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     public ResponseEntity<?> getSeatChangeHistory(
             Authentication auth,
             @PathVariable Long studentId,
@@ -388,46 +403,81 @@ public class StudentController {
 
 
 //  filter the student by name , phone, seat
+@PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
 @GetMapping("/search")
-public List<StudentTableResponse> searchStudents( Authentication auth,
-            @RequestParam(required = false) String name,
-            @RequestParam(required = false) String phone,
-            @RequestParam(required = false) Integer seat
-    ) {
+public List<StudentTableResponse> searchStudents(
+        Authentication auth,
+        @RequestParam Long libraryId,
+        @RequestParam(required = false) String name,
+        @RequestParam(required = false) String phone,
+        @RequestParam(required = false) Integer seat
+) {
 
+    // ============================================================
+    // SECURITY
+    // ============================================================
 
-        String p = auth.getName();
-        Admin admin = adminRepo.findByPhone(p)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
+    securityService.validateLibraryAccess(
+            libraryId,
+            auth
+    );
 
-        List<Student> students;
+    // ============================================================
+    // SEARCH
+    // ============================================================
 
-        if (seat != null) {
-            students = studentRepo.findBySeatNumberAndActiveTrue(seat)
-                    .map(List::of)
-                    .orElse(List.of());
-        } else if (name != null && !name.isBlank()) {
-            students = studentRepo.findByNameContainingIgnoreCaseAndActiveTrue(name);
-        } else if (phone != null && !phone.isBlank()) {
-            students = studentRepo.findByPhoneContainingAndActiveTrue(phone);
-        } else {
-            students = studentRepo.findByActiveTrue();
-        }
+    List<Student> students;
 
-        return students.stream()
-                .map(s -> StudentTableResponse.from(s))
-                .toList();
+    if (seat != null) {
+
+        students = studentRepo
+                .findByLibrary_IdAndSeatNumberAndActiveTrue(
+                        libraryId,
+                        seat
+                )
+                .map(List::of)
+                .orElse(List.of());
+
+    } else if (name != null && !name.isBlank()) {
+
+        students = studentRepo
+                .findByLibrary_IdAndNameContainingIgnoreCaseAndActiveTrue(
+                        libraryId,
+                        name.trim()
+                );
+
+    } else if (phone != null && !phone.isBlank()) {
+
+        students = studentRepo
+                .findByLibrary_IdAndPhoneContainingAndActiveTrue(
+                        libraryId,
+                        phone.trim()
+                );
+
+    } else {
+
+        students = studentRepo
+                .findByLibrary_IdAndActiveTrue(
+                        libraryId
+                );
     }
+
+    return students.stream()
+            .map(StudentTableResponse::from)
+            .toList();
+}
 
 
     @GetMapping("/expiring-soon/{libraryId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     public List<StudentTableResponse> expiringSoon(
             @PathVariable Long libraryId,
             Authentication auth) {
-            
-        String phone = auth.getName();
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
+
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
 
         LocalDate today = LocalDate.now();
         LocalDate limit = today.plusDays(2);
@@ -448,17 +498,37 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
     }
 
 
+    // ============================================================
+// EXPIRED STUDENTS
+// ============================================================
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     @GetMapping("/expired/{libraryId}")
     public List<StudentTableResponse> expiredStudents(
             @PathVariable Long libraryId,
-            Authentication auth) {
+            Authentication auth
+    ) {
+
+        // ============================================================
+        // AUTHENTICATION
+        // ============================================================
+
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
 
 
-        String phone = auth.getName();
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
-                
+        // ============================================================
+        // DATES
+        // ============================================================
+
         LocalDate today = LocalDate.now();
+
+
+        // ============================================================
+        // FIND EXPIRED STUDENTS
+        // ============================================================
 
         List<Student> list =
                 studentRepo
@@ -467,23 +537,68 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
                                 today
                         );
 
-        System.out.println("EXPIRED COUNT = " + list.size());
 
-        return list.stream()
+        // ============================================================
+        // REMOVE EXPIRED ALERTS THAT ARE CURRENTLY ON HOLD
+        // ============================================================
+
+        List<Student> visibleExpiredStudents =
+                list.stream()
+                        .filter(student -> {
+
+                            LocalDate holdUntil =
+                                    student.getAlertHoldUntil();
+
+                            /*
+                             * No hold
+                             */
+                            if (holdUntil == null) {
+                                return true;
+                            }
+
+                            /*
+                             * Hold has expired.
+                             *
+                             * Example:
+                             *
+                             * today       = 18 Sep
+                             * holdUntil   = 18 Sep
+                             *
+                             * Alert should appear again.
+                             */
+                            return !holdUntil.isAfter(today);
+
+                        })
+                        .toList();
+
+
+        System.out.println(
+                "EXPIRED COUNT = "
+                        + visibleExpiredStudents.size()
+        );
+
+
+        // ============================================================
+        // RESPONSE
+        // ============================================================
+
+        return visibleExpiredStudents.stream()
                 .map(StudentTableResponse::from)
                 .toList();
     }
 
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST')")
     @PostMapping("/create/library/{libraryId}")
-    public ResponseEntity<String> createStudent( Authentication auth,
+    public ResponseEntity<String> createStudent(
+            Authentication auth,
             @PathVariable Long libraryId,
-            @RequestBody StudentCreateRequest req
-    ) {
+            @RequestBody StudentCreateRequest req) {
 
-        String phone = auth.getName();
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
 
         Library library = libraryRepo.findById(libraryId)
                 .orElseThrow(() -> new RuntimeException("Library not found"));
@@ -496,7 +611,7 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
 
         student.setBookingDate(LocalDate.now());
         student.setStartDate(LocalDateTime.now());
-        student.setExpiryDate(LocalDate.now().plusDays(30));
+        student.setExpiryDate(LocalDate.now().plusDays(31));
         student.setActive(true);
 
         // 🔥 VERY IMPORTANT
@@ -552,14 +667,16 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
     }
 
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     @GetMapping("/halfday/library/{libraryId}")
     public List<HalfDayStudentResponse> getHalfDayStudents( Authentication auth,
             @PathVariable Long libraryId
     ) {
 
-        String phone = auth.getName();
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
                 
         List<Student> list =
                 studentRepo.findByLibrary_IdAndStudentTypeAndActiveTrue(
@@ -574,9 +691,16 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
                 .toList();
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
     @GetMapping("/export/library/{libraryId}")
     public ResponseEntity<byte[]> exportStudents(
+            Authentication auth,
             @PathVariable Long libraryId) {
+
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
 
         List<Student> students =
                 studentRepo.findByLibrary_Id(libraryId);
@@ -847,11 +971,17 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
         }
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST')")
     @PostMapping("/import/library/{libraryId}")
     public ResponseEntity<?> importStudents(
+            Authentication auth,
             @PathVariable Long libraryId,
             @RequestParam("file") MultipartFile file) {
 
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body(
                     Map.of("message", "Excel file is required")
@@ -1421,10 +1551,326 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
     }
 
 
+    // ============================================================
+// RENEW EXPIRED STUDENT
+// ============================================================
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST')")
+    @PostMapping("/{studentId}/renew")
+    @Transactional
+    public ResponseEntity<?> renewStudent(
+            Authentication auth,
+            @PathVariable Long studentId) {
+
+        Student student = studentRepo.findById(studentId)
+                .orElseThrow(() ->
+                        new RuntimeException("Student not found")
+                );
+
+        if (student.getLibrary() == null) {
+            throw new RuntimeException(
+                    "Student is not associated with any library"
+            );
+        }
+
+        securityService.validateLibraryAccess(
+                student.getLibrary().getId(),
+                auth
+        );
+
+        // ============================================================
+        // RENEW
+        // ============================================================
+
+        LocalDate today = LocalDate.now();
+
+        LocalDate newExpiryDate =
+                today.plusMonths(1);
 
 
+        student.setExpiryDate(newExpiryDate);
+
+        /*
+         * Student becomes active again
+         */
+        student.setActive(true);
 
 
+        /*
+         * Clear alert hold.
+         *
+         * Renewal means the alert is no longer required.
+         */
+        student.setAlertHoldUntil(null);
+
+
+        // ============================================================
+        // SAVE
+        // ============================================================
+
+        studentRepo.save(student);
+
+
+        // ============================================================
+        // RESPONSE
+        // ============================================================
+
+        Map<String, Object> response =
+                new LinkedHashMap<>();
+
+        response.put(
+                "message",
+                "Student renewed successfully"
+        );
+
+        response.put(
+                "studentId",
+                student.getId()
+        );
+
+        response.put(
+                "studentName",
+                student.getName()
+        );
+
+        response.put(
+                "seatNumber",
+                student.getSeatNumber()
+        );
+
+        response.put(
+                "expiryDate",
+                student.getExpiryDate()
+        );
+
+        response.put(
+                "active",
+                student.isActive()
+        );
+
+
+        return ResponseEntity.ok(response);
+    }
+
+    // ============================================================
+// HOLD EXPIRY ALERT
+// ============================================================
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST')")
+    @PostMapping("/{studentId}/hold")
+    @Transactional
+    public ResponseEntity<?> holdStudentAlert(
+            Authentication auth,
+            @PathVariable Long studentId,
+            @RequestBody HoldRequest request) {
+
+        Student student = studentRepo.findById(studentId)
+                .orElseThrow(() ->
+                        new RuntimeException("Student not found")
+                );
+
+        if (student.getLibrary() == null) {
+            throw new RuntimeException(
+                    "Student is not associated with any library"
+            );
+        }
+
+        securityService.validateLibraryAccess(
+                student.getLibrary().getId(),
+                auth
+        );
+
+        // existing validation + hold code...
+
+
+        // ============================================================
+        // VALIDATE REQUEST
+        // ============================================================
+
+        if (request == null || request.getDays() == null) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            Map.of(
+                                    "message",
+                                    "Hold days are required"
+                            )
+                    );
+        }
+
+
+        Integer days = request.getDays();
+
+
+        if (days <= 0) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            Map.of(
+                                    "message",
+                                    "Hold days must be greater than 0"
+                            )
+                    );
+        }
+
+
+        /*
+         * Optional safety limit.
+         *
+         * Prevent something like:
+         *
+         * 999999 days
+         */
+        if (days > 365) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            Map.of(
+                                    "message",
+                                    "Hold period cannot exceed 365 days"
+                            )
+                    );
+        }
+
+
+        // ============================================================
+        // CHECK LIBRARY
+        // ============================================================
+
+        if (student.getLibrary() == null) {
+
+            throw new RuntimeException(
+                    "Student is not associated with any library"
+            );
+        }
+
+
+        // ============================================================
+        // HOLD ALERT
+        // ============================================================
+
+        LocalDate holdUntil =
+                LocalDate.now().plusDays(days);
+
+        student.setAlertHoldUntil(holdUntil);
+
+
+        // ============================================================
+        // SAVE
+        // ============================================================
+
+        studentRepo.save(student);
+
+
+        // ============================================================
+        // RESPONSE
+        // ============================================================
+
+        Map<String, Object> response =
+                new LinkedHashMap<>();
+
+        response.put(
+                "message",
+                "Alert held successfully"
+        );
+
+        response.put(
+                "studentId",
+                student.getId()
+        );
+
+        response.put(
+                "studentName",
+                student.getName()
+        );
+
+        response.put(
+                "holdDays",
+                days
+        );
+
+        response.put(
+                "alertHoldUntil",
+                holdUntil
+        );
+
+
+        return ResponseEntity.ok(response);
+    }
+
+    // ============================================================
+// HELD EXPIRED ALERTS
+// ============================================================
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
+    @GetMapping("/held-alerts/{libraryId}")
+    public List<StudentTableResponse> heldExpiredStudents(
+            @PathVariable Long libraryId,
+            Authentication auth
+    ) {
+
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
+
+        LocalDate today = LocalDate.now();
+
+
+        // ============================================================
+        // FIND ALL EXPIRED ACTIVE STUDENTS
+        // ============================================================
+
+        List<Student> list =
+                studentRepo
+                        .findBySeat_Library_IdAndActiveTrueAndExpiryDateBefore(
+                                libraryId,
+                                today
+                        );
+
+
+        // ============================================================
+        // ONLY STUDENTS CURRENTLY ON HOLD
+        // ============================================================
+
+        List<Student> heldStudents =
+                list.stream()
+                        .filter(student -> {
+
+                            LocalDate holdUntil =
+                                    student.getAlertHoldUntil();
+
+                            /*
+                             * Must have a hold date
+                             */
+                            if (holdUntil == null) {
+                                return false;
+                            }
+
+                            /*
+                             * Hold must still be active.
+                             *
+                             * holdUntil > today
+                             */
+                            return holdUntil.isAfter(today);
+
+                        })
+                        .toList();
+
+
+        System.out.println(
+                "HELD ALERT COUNT = "
+                        + heldStudents.size()
+        );
+
+
+        return heldStudents.stream()
+                .map(StudentTableResponse::from)
+                .toList();
+    }
     private String getString(Cell cell) {
         if (cell == null) return "";
 
@@ -1466,4 +1912,127 @@ public List<StudentTableResponse> searchStudents( Authentication auth,
             return LocalDateTime.parse(cell.getStringCellValue().replace(" ", "T"));
         }
     }
+
+
+    // ============================================================
+    // PAGINATED STUDENT LIST
+    // ============================================================
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
+    @GetMapping("/library/{libraryId}/page")
+    public ResponseEntity<?> getStudentsPaginated(
+            Authentication auth,
+            @PathVariable Long libraryId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "ALL") String status,
+            @RequestParam(defaultValue = "") String search) {
+
+        securityService.validateLibraryAccess(
+                libraryId,
+                auth
+        );
+
+
+        // ============================================================
+        // VALIDATION
+        // ============================================================
+
+        if (page < 0) {
+            page = 0;
+        }
+
+        // 🔥 Always keep page size at maximum 10
+        size = 10;
+
+        if (status == null || status.isBlank()) {
+            status = "ALL";
+        }
+
+        status = status.trim().toUpperCase();
+
+        if (!status.equals("ALL")
+                && !status.equals("ACTIVE")
+                && !status.equals("EXPIRED")) {
+
+            return ResponseEntity.badRequest().body(
+                    Map.of(
+                            "message",
+                            "Invalid status. Use ALL, ACTIVE or EXPIRED"
+                    )
+            );
+        }
+
+
+        // ============================================================
+        // SEARCH
+        // ============================================================
+
+        String cleanSearch =
+                search == null
+                        ? ""
+                        : search.trim();
+
+
+        // ============================================================
+        // SEAT SEARCH
+        // ============================================================
+
+        Integer seat = null;
+
+        if (!cleanSearch.isBlank()) {
+
+            try {
+
+                seat = Integer.parseInt(cleanSearch);
+
+            } catch (NumberFormatException ignored) {
+
+                // Search is name / phone
+                seat = null;
+            }
+        }
+
+
+        // ============================================================
+        // PAGEABLE
+        // ============================================================
+
+        Pageable pageable =
+                PageRequest.of(
+                        page,
+                        size,
+                        Sort.by(
+                                Sort.Direction.ASC,
+                                "seatNumber"
+                        )
+                );
+
+
+        // ============================================================
+        // DATABASE QUERY
+        // ============================================================
+
+        Page<Student> studentPage =
+                studentRepo.findStudentsPaginated(
+                        libraryId,
+                        cleanSearch,
+                        seat,
+                        status,
+                        LocalDate.now(),
+                        pageable
+                );
+
+
+        // ============================================================
+        // CONVERT RESPONSE
+        // ============================================================
+
+        Page<StudentTableResponse> response =
+                studentPage.map(StudentTableResponse::from);
+
+
+        return ResponseEntity.ok(response);
+    }
 }
+

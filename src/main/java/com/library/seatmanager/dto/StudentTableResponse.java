@@ -8,29 +8,97 @@ import java.time.LocalDateTime;
 public class StudentTableResponse {
 
     private Long id;
+
     private String name;
+
     private String phone;
+
     private int seatNumber;
+
     private LocalDateTime startDate;
+
     private LocalDate bookingDate;
+
     private LocalDateTime endDate;
+
     private LocalDate expireDate;
+
     private int amount;
 
+    /*
+     * ============================================================
+     * ALERT HOLD
+     * ============================================================
+     *
+     * If null:
+     *      Alert is not on hold.
+     *
+     * If future date:
+     *      Alert is currently on hold.
+     */
+    private LocalDate alertHoldUntil;
+
+
+    // ============================================================
+    // FROM ENTITY
+    // ============================================================
+
     public static StudentTableResponse from(Student s) {
-        StudentTableResponse dto = new StudentTableResponse();
+
+        StudentTableResponse dto =
+                new StudentTableResponse();
+
         dto.setId(s.getId());
+
         dto.setName(s.getName());
+
         dto.setPhone(s.getPhone());
-        dto.setSeatNumber(s.getSeatNumber());
-        dto.setStartDate(s.getStartDate());
-        dto.setBookingDate(s.getBookingDate());
-        dto.setEndDate(s.getEndDate());
-        dto.setAmount(s.getAmountPaid());
-        dto.setExpireDate(s.getExpiryDate());
+
+        dto.setSeatNumber(
+                s.getSeatNumber() == null
+                        ? 0
+                        : s.getSeatNumber()
+        );
+
+        dto.setStartDate(
+                s.getStartDate()
+        );
+
+        dto.setBookingDate(
+                s.getBookingDate()
+        );
+
+        dto.setEndDate(
+                s.getEndDate()
+        );
+
+        dto.setAmount(
+                s.getAmountPaid()
+        );
+
+        dto.setExpireDate(
+                s.getExpiryDate()
+        );
+
+        /*
+         * IMPORTANT
+         *
+         * This was missing in your current code.
+         *
+         * Without this, frontend will never know
+         * when the alert is on hold.
+         */
+        dto.setAlertHoldUntil(
+                s.getAlertHoldUntil()
+        );
+
         return dto;
     }
 
+
+    // ============================================================
+    // GETTERS / SETTERS
+    // ============================================================
 
     public LocalDate getBookingDate() {
         return bookingDate;
@@ -40,6 +108,7 @@ public class StudentTableResponse {
         this.bookingDate = bookingDate;
     }
 
+
     public Long getId() {
         return id;
     }
@@ -47,6 +116,8 @@ public class StudentTableResponse {
     public void setId(Long id) {
         this.id = id;
     }
+
+
     public String getPhone() {
         return phone;
     }
@@ -54,6 +125,7 @@ public class StudentTableResponse {
     public void setPhone(String phone) {
         this.phone = phone;
     }
+
 
     public String getName() {
         return name;
@@ -63,6 +135,7 @@ public class StudentTableResponse {
         this.name = name;
     }
 
+
     public int getSeatNumber() {
         return seatNumber;
     }
@@ -71,6 +144,7 @@ public class StudentTableResponse {
         this.seatNumber = seatNumber;
     }
 
+
     public LocalDateTime getStartDate() {
         return startDate;
     }
@@ -78,6 +152,8 @@ public class StudentTableResponse {
     public void setStartDate(LocalDateTime startDate) {
         this.startDate = startDate;
     }
+
+
     public LocalDateTime getEndDate() {
         return endDate;
     }
@@ -85,6 +161,7 @@ public class StudentTableResponse {
     public void setEndDate(LocalDateTime endDate) {
         this.endDate = endDate;
     }
+
 
     public int getAmount() {
         return amount;
@@ -94,6 +171,7 @@ public class StudentTableResponse {
         this.amount = amount;
     }
 
+
     public LocalDate getExpireDate() {
         return expireDate;
     }
@@ -102,23 +180,59 @@ public class StudentTableResponse {
         this.expireDate = expireDate;
     }
 
-    public StudentTableResponse(Long id, int amount, LocalDate expireDate, LocalDateTime endDate, LocalDateTime startDate, LocalDate bookingDate,  int seatNumber, String phone, String name) {
+
+    // ============================================================
+    // ALERT HOLD GETTER / SETTER
+    // ============================================================
+
+    public LocalDate getAlertHoldUntil() {
+        return alertHoldUntil;
+    }
+
+    public void setAlertHoldUntil(LocalDate alertHoldUntil) {
+        this.alertHoldUntil = alertHoldUntil;
+    }
+
+
+    // ============================================================
+    // CONSTRUCTOR
+    // ============================================================
+
+    public StudentTableResponse(
+            Long id,
+            int amount,
+            LocalDate expireDate,
+            LocalDateTime endDate,
+            LocalDateTime startDate,
+            LocalDate bookingDate,
+            int seatNumber,
+            String phone,
+            String name
+    ) {
+
         this.id = id;
         this.amount = amount;
         this.expireDate = expireDate;
         this.endDate = endDate;
         this.startDate = startDate;
-        this.bookingDate=bookingDate;
+        this.bookingDate = bookingDate;
         this.seatNumber = seatNumber;
         this.phone = phone;
         this.name = name;
     }
 
+
     public StudentTableResponse() {
     }
 
+
+    // ============================================================
+    // TO STRING
+    // ============================================================
+
     @Override
     public String toString() {
+
         return "StudentTableResponse{" +
                 "id=" + id +
                 ", name='" + name + '\'' +
@@ -129,6 +243,7 @@ public class StudentTableResponse {
                 ", endDate=" + endDate +
                 ", expireDate=" + expireDate +
                 ", amount=" + amount +
+                ", alertHoldUntil=" + alertHoldUntil +
                 '}';
     }
 }

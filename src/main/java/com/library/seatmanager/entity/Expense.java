@@ -18,6 +18,8 @@ public class Expense {
 
     private String status;
 
+    private String comment;
+
     // ✅ THIS FIELD MUST EXIST
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "library_id", nullable = false)
@@ -74,13 +76,22 @@ public class Expense {
         this.library = library;
     }
 
-    public Expense(Library library, String status, LocalDate expenseDate, int amount, String category, Long id) {
+    public String getComment() {
+        return comment;
+    }
+
+    public void setComment(String comment) {
+        this.comment = comment;
+    }
+
+    public Expense(Long id, Library library, String comment, String status, LocalDate expenseDate, int amount, String category) {
+        this.id = id;
         this.library = library;
+        this.comment = comment;
         this.status = status;
         this.expenseDate = expenseDate;
         this.amount = amount;
         this.category = category;
-        this.id = id;
     }
 
     public Expense() {
@@ -94,7 +105,8 @@ public class Expense {
                 ", amount=" + amount +
                 ", expenseDate=" + expenseDate +
                 ", status='" + status + '\'' +
-                ", libraryId=" + (library != null ? library.getId() : null) +
+                ", comment='" + comment + '\'' +
+                ", library=" + library +
                 '}';
     }
 }

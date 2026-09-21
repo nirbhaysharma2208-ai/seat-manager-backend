@@ -3,13 +3,48 @@ package com.library.seatmanager.dto;
 import com.library.seatmanager.entity.Student;
 
 public class BookingRequest {
+
     private Long libraryId;
+
     private int seatNumber;
+
     private String name;
+
     private String phone;
+
     private int amountPaid;
+
     private Student.StudentType studentType;
 
+    /*
+     * ============================================================
+     * SEAT HOLD
+     * ============================================================
+     *
+     * null = normal booking
+     *
+     * value = convert this hold into booking
+     */
+    private Long holdId;
+
+    public BookingRequest() {
+    }
+
+    public BookingRequest(
+            Long libraryId,
+            Student.StudentType studentType,
+            int amountPaid,
+            String phone,
+            String name,
+            int seatNumber
+    ) {
+        this.libraryId = libraryId;
+        this.studentType = studentType;
+        this.amountPaid = amountPaid;
+        this.phone = phone;
+        this.name = name;
+        this.seatNumber = seatNumber;
+    }
 
     public Long getLibraryId() {
         return libraryId;
@@ -59,14 +94,12 @@ public class BookingRequest {
         this.amountPaid = amountPaid;
     }
 
+    public Long getHoldId() {
+        return holdId;
+    }
 
-    public BookingRequest(Long libraryId, Student.StudentType studentType, int amountPaid, String phone, String name, int seatNumber) {
-        this.libraryId = libraryId;
-        this.studentType = studentType;
-        this.amountPaid = amountPaid;
-        this.phone = phone;
-        this.name = name;
-        this.seatNumber = seatNumber;
+    public void setHoldId(Long holdId) {
+        this.holdId = holdId;
     }
 
     @Override
@@ -78,9 +111,7 @@ public class BookingRequest {
                 ", phone='" + phone + '\'' +
                 ", amountPaid=" + amountPaid +
                 ", studentType=" + studentType +
+                ", holdId=" + holdId +
                 '}';
-    }
-
-    public BookingRequest() {
     }
 }

@@ -1,16 +1,18 @@
 package com.library.seatmanager.repository;
 
-
 import com.library.seatmanager.entity.Seat;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SeatRepository extends JpaRepository<Seat,Long> {
+public interface SeatRepository extends JpaRepository<Seat, Long> {
 
     long countByOccupiedTrue();
 
@@ -20,11 +22,44 @@ public interface SeatRepository extends JpaRepository<Seat,Long> {
 
     List<Seat> findByLibraryIdOrderBySeatNumberAsc(Long libraryId);
 
-    Optional<Seat> findByLibraryIdAndSeatNumber(Long libraryId, int seatNumber);
+    Optional<Seat> findByLibraryIdAndSeatNumber(
+            Long libraryId,
+            int seatNumber
+    );
+
+    /*
+     * ============================================================
+     * LOCKED SEAT LOOKUP
+     * ============================================================
+     *
+     * Used when booking / holding / changing a seat.
+     *
+     * This prevents two simultaneous transactions from
+     * modifying the same seat at the same time.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT s
+    FROM Seat s
+    WHERE s.library.id = :libraryId
+    AND s.seatNumber = :seatNumber
+    """)
+    Optional<Seat> findByLibraryIdAndSeatNumberForUpdate(
+            @Param("libraryId") Long libraryId,
+            @Param("seatNumber") int seatNumber
+    );
 
     int countByLibraryId(Long libraryId);
 
-    @Query("SELECT COUNT(s) > 0 FROM Student s WHERE s.library.id = :libraryId AND s.seatNumber = :seatNumber AND s.active = true")
-    boolean isSeatOccupied(Long libraryId, Integer seatNumber);
-
+    @Query("""
+        SELECT COUNT(s) > 0
+        FROM Student s
+        WHERE s.library.id = :libraryId
+        AND s.seatNumber = :seatNumber
+        AND s.active = true
+    """)
+    boolean isSeatOccupied(
+            Long libraryId,
+            Integer seatNumber
+    );
 }

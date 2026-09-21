@@ -8,7 +8,9 @@ import com.library.seatmanager.repository.AdminRepository;
 import com.library.seatmanager.repository.ExpenseRepository;
 import com.library.seatmanager.repository.LibraryRepository;
 import com.library.seatmanager.repository.StudentRepository;
+import com.library.seatmanager.service.SecurityService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,20 +34,23 @@ public class BillingController {
     @Autowired
     private AdminRepository adminRepo;
 
+    @Autowired
+    private SecurityService securityService;
 
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ACCOUNTANT')")
     @GetMapping("/billing/summary/{libraryId}")
-    public BillingSummaryResponse getMonthlySummary( Authentication authentication,
+    public BillingSummaryResponse getMonthlySummary(
+            Authentication authentication,
             @PathVariable Long libraryId,
             @RequestParam int year,
-            @RequestParam int month
-    ) {
+            @RequestParam int month) {
 
-                 // 🔐 Get logged-in phone from JWT
-        String phone = authentication.getName();
+        securityService.validateLibraryAccess(
+                libraryId,
+                authentication
+        );
 
-        // 🔍 Find admin
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));  
 
         int revenue =
                 studentRepo.sumMonthlyRevenue(libraryId, year, month);
@@ -94,62 +99,65 @@ public class BillingController {
     }
 
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ACCOUNTANT')")
     @GetMapping("/billing/expenses/library/{libraryId}")
-    public List<Expense> getAllExpenses( Authentication authentication,
-            @PathVariable Long libraryId
-    ) {
-        // 🔐 Get logged-in phone from JWT
-        String phone = authentication.getName();
+    public List<Expense> getAllExpenses(
+            Authentication authentication,
+            @PathVariable Long libraryId) {
 
-        // 🔍 Find admin
-        Admin admin = adminRepo.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));  
-        
-        System.out.println("Fetching ALL expenses for library: " + libraryId);
-        return expenseRepo.findByLibrary_IdOrderByExpenseDateDesc(libraryId);
+        securityService.validateLibraryAccess(
+                libraryId,
+                authentication
+        );
+
+        return expenseRepo
+                .findByLibrary_IdOrderByExpenseDateDesc(libraryId);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ACCOUNTANT')")
     @PostMapping("/expenses/library/{libraryId}")
-    public Expense addExpense( Authentication authentication,
+    public Expense addExpense(
+            Authentication authentication,
             @PathVariable Long libraryId,
-            @RequestBody Expense expense
-    ) {
+            @RequestBody Expense expense) {
 
-         // 🔐 Get logged-in phone from JWT
-         String phone = authentication.getName();
-
-         // 🔍 Find admin
-         Admin admin = adminRepo.findByPhone(phone)
-                 .orElseThrow(() -> new RuntimeException("Admin not found"));  
+        securityService.validateLibraryAccess(
+                libraryId,
+                authentication
+        );
 
         Library library = libraryRepo.findById(libraryId)
-                .orElseThrow(() -> new RuntimeException("Library not found"));
+                .orElseThrow(() ->
+                        new RuntimeException("Library not found")
+                );
 
-        expense.setLibrary(library);   // 🔥 THIS WAS MISSING
+        expense.setLibrary(library);
+
         return expenseRepo.save(expense);
     }
     // 🔹 Update expense
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ACCOUNTANT')")
     @PutMapping("/billing/expenses/{id}/library/{libraryId}")
-    public Expense updateExpense( Authentication authentication,
+    public Expense updateExpense(
+            Authentication authentication,
             @PathVariable Long id,
             @PathVariable Long libraryId,
-            @RequestBody Expense req
-    ) {
+            @RequestBody Expense req) {
 
-         // 🔐 Get logged-in phone from JWT
-         String phone = authentication.getName();
+        securityService.validateLibraryAccess(
+                libraryId,
+                authentication
+        );
 
-         // 🔍 Find admin
-         Admin admin = adminRepo.findByPhone(phone)
-                 .orElseThrow(() -> new RuntimeException("Admin not found"));  
-
-        Expense e = expenseRepo.findById(id).orElseThrow();
+        Expense e = expenseRepo.findById(id)
+                .orElseThrow();
 
         if (!e.getLibrary().getId().equals(libraryId)) {
             throw new RuntimeException("Unauthorized");
         }
 
         e.setCategory(req.getCategory());
+        e.setComment(req.getComment());
         e.setAmount(req.getAmount());
         e.setExpenseDate(req.getExpenseDate());
         e.setStatus(req.getStatus());
@@ -158,16 +166,33 @@ public class BillingController {
     }
 
     // 🔹 Delete expense
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ACCOUNTANT')")
     @DeleteMapping("/billing/expenses/{id}/library/{libraryId}")
-    public void deleteExpense( Authentication authentication, @PathVariable Long id) {
+    public void deleteExpense(
+            Authentication authentication,
+            @PathVariable Long id,
+            @PathVariable Long libraryId) {
 
-         // 🔐 Get logged-in phone from JWT
-         String phone = authentication.getName();
+        securityService.validateLibraryAccess(
+                libraryId,
+                authentication
+        );
 
-         // 🔍 Find admin
-         Admin admin = adminRepo.findByPhone(phone)
-                 .orElseThrow(() -> new RuntimeException("Admin not found"));  
+        Expense expense = expenseRepo.findById(id)
+                .orElseThrow(() ->
+                        new RuntimeException("Expense not found")
+                );
 
-        expenseRepo.deleteById(id);
+        if (expense.getLibrary() == null
+                || !expense.getLibrary()
+                .getId()
+                .equals(libraryId)) {
+
+            throw new RuntimeException(
+                    "Unauthorized"
+            );
+        }
+
+        expenseRepo.delete(expense);
     }
 }
