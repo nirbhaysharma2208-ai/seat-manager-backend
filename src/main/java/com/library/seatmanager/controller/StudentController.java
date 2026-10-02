@@ -467,6 +467,43 @@ public List<StudentTableResponse> searchStudents(
             .toList();
 }
 
+    @DeleteMapping("/{studentId}/library/{libraryId}")
+    public ResponseEntity<String> deleteStudent(
+            Authentication auth,
+            @PathVariable Long studentId,
+            @PathVariable Long libraryId) {
+
+        String phone = auth.getName();
+
+        Admin admin = adminRepo.findByPhone(phone)
+                .orElseThrow(() -> new RuntimeException("Admin not found"));
+
+        Student student = studentRepo.findById(studentId)
+                .orElseThrow(() -> new RuntimeException("Student not found"));
+
+        // Make sure student belongs to this library
+        if (student.getLibrary() == null ||
+                !student.getLibrary().getId().equals(libraryId)) {
+
+            return ResponseEntity.badRequest()
+                    .body("Student does not belong to this library");
+        }
+
+        // Free the seat before deleting the student
+        if (student.getSeat() != null) {
+
+            Seat seat = student.getSeat();
+
+            seat.setOccupied(false);
+
+            seatRepo.save(seat);
+        }
+
+        studentRepo.delete(student);
+
+        return ResponseEntity.ok("Student deleted successfully");
+    }
+
 
     @GetMapping("/expiring-soon/{libraryId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
@@ -689,6 +726,66 @@ public List<StudentTableResponse> searchStudents(
         return list.stream()
                 .map(HalfDayStudentResponse::from)
                 .toList();
+    }
+
+    @PutMapping("/halfday/{studentId}")
+    public ResponseEntity<?> updateHalfDayStudent(
+            @PathVariable Long studentId,
+            @RequestBody HalfDayStudentUpdateRequest request
+    ) {
+
+        Optional<Student> optionalStudent =
+                studentRepo.findById(studentId);
+
+        if (optionalStudent.isEmpty()) {
+            return ResponseEntity
+                    .status(HttpStatus.NOT_FOUND)
+                    .body(Map.of(
+                            "message",
+                            "Half Day student not found"
+                    ));
+        }
+
+        Student student = optionalStudent.get();
+
+        // IMPORTANT:
+        // This endpoint is ONLY for Half Day students.
+        if (student.getStudentType() != Student.StudentType.HALF_DAY) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of(
+                            "message",
+                            "Student is not a Half Day student"
+                    ));
+        }
+
+        if (request.getName() != null &&
+                !request.getName().isBlank()) {
+
+            student.setName(request.getName().trim());
+        }
+
+        if (request.getPhone() != null &&
+                !request.getPhone().isBlank()) {
+
+            student.setPhone(request.getPhone().trim());
+        }
+
+        if (false) {
+            student.setAmountPaid(request.getAmount());
+        }
+
+        if (request.getHalfDaySlot() != null) {
+            student.setHalfDaySlot(request.getHalfDaySlot());
+        }
+
+        if (request.getExpiryDate() != null) {
+            student.setExpiryDate(request.getExpiryDate());
+        }
+
+        Student savedStudent = studentRepo.save(student);
+
+        return ResponseEntity.ok(savedStudent);
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
