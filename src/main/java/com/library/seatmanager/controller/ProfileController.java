@@ -5,8 +5,10 @@ import com.library.seatmanager.dto.UpdateAdminProfileRequest;
 import com.library.seatmanager.dto.UpdateLibraryProfileRequest;
 import com.library.seatmanager.entity.Admin;
 import com.library.seatmanager.entity.Library;
+import com.library.seatmanager.entity.Seat;
 import com.library.seatmanager.repository.AdminRepository;
 import com.library.seatmanager.repository.LibraryRepository;
+import com.library.seatmanager.repository.SeatRepository;
 import com.library.seatmanager.service.SecurityService;
 
 import jakarta.transaction.Transactional;
@@ -15,6 +17,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/profile")
 public class ProfileController {
@@ -22,14 +26,17 @@ public class ProfileController {
     private final AdminRepository adminRepo;
     private final LibraryRepository libraryRepo;
     private final SecurityService securityService;
+    private final SeatRepository seatRepo;
 
     public ProfileController(
             AdminRepository adminRepo,
             LibraryRepository libraryRepo,
+            SeatRepository seatRepo,
             SecurityService securityService
     ) {
         this.adminRepo = adminRepo;
         this.libraryRepo = libraryRepo;
+        this.seatRepo = seatRepo;
         this.securityService = securityService;
     }
 
@@ -127,46 +134,10 @@ public class ProfileController {
         }
 
         // -------------------------
-        // Validate phone
-        // -------------------------
-
-        if (request.getPhone() == null ||
-                request.getPhone().trim().isEmpty()) {
-
-            throw new RuntimeException("Phone number is required");
-        }
-
-        String newPhone = request.getPhone().trim();
-
-        if (!newPhone.matches("\\d{10}")) {
-            throw new RuntimeException(
-                    "Phone number must contain exactly 10 digits"
-            );
-        }
-
-        // -------------------------
-        // Check duplicate phone
-        // -------------------------
-
-        if (!newPhone.equals(admin.getPhone())) {
-
-            adminRepo.findByPhone(newPhone)
-                    .ifPresent(existingAdmin -> {
-
-                        if (!existingAdmin.getId().equals(admin.getId())) {
-                            throw new RuntimeException(
-                                    "Phone number is already registered"
-                            );
-                        }
-                    });
-        }
-
-        // -------------------------
-        // Update admin
+        // Update ONLY name
         // -------------------------
 
         admin.setName(request.getName().trim());
-        admin.setPhone(newPhone);
 
         adminRepo.save(admin);
 
@@ -211,9 +182,9 @@ public class ProfileController {
             Authentication auth
     ) {
 
-        // -------------------------
-        // Validate access
-        // -------------------------
+        // =========================================================
+        // VALIDATE ACCESS
+        // =========================================================
 
         securityService.validateLibraryAccess(libraryId, auth);
 
@@ -224,19 +195,18 @@ public class ProfileController {
                         new RuntimeException("Admin not found")
                 );
 
-        // -------------------------
-        // Load library
-        // -------------------------
+        // =========================================================
+        // LOAD LIBRARY
+        // =========================================================
 
         Library library = libraryRepo.findById(libraryId)
                 .orElseThrow(() ->
                         new RuntimeException("Library not found")
                 );
 
-        // -------------------------
-        // Ensure this admin owns
-        // the library
-        // -------------------------
+        // =========================================================
+        // VERIFY OWNER
+        // =========================================================
 
         if (library.getAdmin() == null ||
                 !library.getAdmin().getId().equals(admin.getId())) {
@@ -246,9 +216,9 @@ public class ProfileController {
             );
         }
 
-        // -------------------------
-        // Validate library name
-        // -------------------------
+        // =========================================================
+        // VALIDATE LIBRARY NAME
+        // =========================================================
 
         if (request.getLibraryName() == null ||
                 request.getLibraryName().trim().isEmpty()) {
@@ -258,9 +228,9 @@ public class ProfileController {
             );
         }
 
-        // -------------------------
-        // Validate seats
-        // -------------------------
+        // =========================================================
+        // VALIDATE SEATS
+        // =========================================================
 
         if (request.getTotalSeats() == null ||
                 request.getTotalSeats() <= 0) {
@@ -270,23 +240,84 @@ public class ProfileController {
             );
         }
 
-        // -------------------------
-        // Update library
-        // -------------------------
+        int oldTotalSeats = library.getTotalSeats();
+        int newTotalSeats = request.getTotalSeats();
+
+        // =========================================================
+        // HANDLE SEAT COUNT CHANGE
+        // =========================================================
+
+        if (newTotalSeats < oldTotalSeats) {
+
+            List<Seat> seatsToRemove =
+                    seatRepo.findByLibraryIdAndSeatNumberGreaterThan(
+                            libraryId,
+                            newTotalSeats
+                    );
+
+            // Check whether any seat above the new limit is occupied
+            boolean occupiedSeatExists =
+                    seatsToRemove.stream()
+                            .anyMatch(Seat::isOccupied);
+
+            if (occupiedSeatExists) {
+                throw new RuntimeException(
+                        "Cannot reduce seats because one or more seats above the new limit are occupied."
+                );
+            }
+
+            // Delete vacant seats above the new limit
+            if (!seatsToRemove.isEmpty()) {
+                seatRepo.deleteAll(seatsToRemove);
+            }
+        }
+
+        // =========================================================
+        // CREATE NEW SEATS
+        // =========================================================
+
+        if (newTotalSeats > oldTotalSeats) {
+
+            List<Seat> existingSeats =
+                    seatRepo.findByLibraryId(libraryId);
+
+            java.util.Set<Integer> existingSeatNumbers =
+                    existingSeats.stream()
+                            .map(Seat::getSeatNumber)
+                            .collect(java.util.stream.Collectors.toSet());
+
+            for (int seatNumber = 1;
+                 seatNumber <= newTotalSeats;
+                 seatNumber++) {
+
+                if (!existingSeatNumbers.contains(seatNumber)) {
+
+                    Seat seat = new Seat();
+
+                    seat.setSeatNumber(seatNumber);
+                    seat.setOccupied(false);
+                    seat.setLibrary(library);
+
+                    seatRepo.save(seat);
+                }
+            }
+        }
+
+        // =========================================================
+        // UPDATE LIBRARY
+        // =========================================================
 
         library.setLibraryName(
                 request.getLibraryName().trim()
         );
 
-        library.setTotalSeats(
-                request.getTotalSeats()
-        );
+        library.setTotalSeats(newTotalSeats);
 
         libraryRepo.save(library);
 
-        // -------------------------
-        // Return updated profile
-        // -------------------------
+        // =========================================================
+        // RETURN UPDATED PROFILE
+        // =========================================================
 
         return new ProfileDetailsResponse(
                 admin.getName(),

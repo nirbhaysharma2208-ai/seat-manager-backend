@@ -306,4 +306,17 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
     List<Student> findByLibrary_IdAndActiveTrue(
             Long libraryId
     );
+
+    List<Student>
+    findByLibrary_IdAndActiveTrueAndExpiryDateBetween(
+            Long libraryId,
+            LocalDate start,
+            LocalDate end
+    );
+
+    List<Student>
+    findByLibrary_IdAndActiveTrueAndExpiryDateBefore(
+            Long libraryId,
+            LocalDate date
+    );
 }

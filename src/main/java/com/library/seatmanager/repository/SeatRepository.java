@@ -62,4 +62,8 @@ public interface SeatRepository extends JpaRepository<Seat, Long> {
             Long libraryId,
             Integer seatNumber
     );
+    List<Seat> findByLibraryIdAndSeatNumberGreaterThan(
+            Long libraryId,
+            int seatNumber
+    );
 }

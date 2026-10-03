@@ -521,7 +521,7 @@ public List<StudentTableResponse> searchStudents(
 
         List<Student> list =
                 studentRepo
-                        .findBySeat_Library_IdAndActiveTrueAndExpiryDateBetween(
+                        .findByLibrary_IdAndActiveTrueAndExpiryDateBetween(
                                 libraryId,
                                 today,
                                 limit
@@ -569,7 +569,7 @@ public List<StudentTableResponse> searchStudents(
 
         List<Student> list =
                 studentRepo
-                        .findBySeat_Library_IdAndActiveTrueAndExpiryDateBefore(
+                        .findByLibrary_IdAndActiveTrueAndExpiryDateBefore(
                                 libraryId,
                                 today
                         );
@@ -786,6 +786,30 @@ public List<StudentTableResponse> searchStudents(
         Student savedStudent = studentRepo.save(student);
 
         return ResponseEntity.ok(savedStudent);
+    }
+
+    @DeleteMapping("/halfday/{studentId}")
+    public ResponseEntity<?> deleteHalfDayStudent(
+            @PathVariable Long studentId) {
+
+        Student student = studentRepo.findById(studentId)
+                .orElseThrow(() ->
+                        new RuntimeException("Student not found with id: " + studentId)
+                );
+
+        if (student.getStudentType() != Student.StudentType.HALF_DAY) {
+            throw new RuntimeException(
+                    "Student is not a Half Day student"
+            );
+        }
+
+        studentRepo.delete(student);
+
+        return ResponseEntity.ok(
+                Map.of(
+                        "message", "Half Day student vacated successfully"
+                )
+        );
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT')")
