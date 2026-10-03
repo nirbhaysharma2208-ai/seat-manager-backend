@@ -18,10 +18,8 @@ public class CorsConfig {
                 CorsConfiguration config = new CorsConfiguration();
 
                 config.setAllowedOrigins(List.of(
-                        "https://seattss.vercel.app",
-                        "https://library-seatmanager.vercel.app",
-                        "http://127.0.0.1:5500",
-                        "http://localhost:8081"
+                        "https://seattss.vercel.app",                        
+                        "https://libmanage-psi.vercel.app"
                 ));
 
                 config.setAllowedMethods(List.of(
