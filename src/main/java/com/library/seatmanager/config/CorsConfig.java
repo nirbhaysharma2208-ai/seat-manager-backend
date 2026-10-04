@@ -21,7 +21,8 @@ public class CorsConfig {
                         "https://seattss.vercel.app",
                         "https://library-seatmanager.vercel.app",
                         "http://127.0.0.1:5500",
-                        "http://localhost:8081"
+                        "http://localhost:8081",
+                        "https://libmanagee.vercel.app/"
                 ));
 
                 config.setAllowedMethods(List.of(
