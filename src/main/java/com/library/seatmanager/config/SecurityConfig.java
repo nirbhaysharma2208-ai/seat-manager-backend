@@ -35,6 +35,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Excepti
         .cors(cors -> {})
         .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/api/auth/**").permitAll()
+                    .requestMatchers("/api/customer-enquiries").permitAll()
                     .anyRequest().authenticated()
         )
         .sessionManagement(session ->
