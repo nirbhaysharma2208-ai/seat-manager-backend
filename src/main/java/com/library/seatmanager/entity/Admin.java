@@ -1,10 +1,13 @@
 package com.library.seatmanager.entity;
 
+import com.library.seatmanager.dto.AccountStatus;
+import com.library.seatmanager.dto.AdminRole;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
 public class Admin {
@@ -25,8 +28,28 @@ public class Admin {
     private LocalDateTime otpExpiry;
 
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AdminRole role = AdminRole.ADMIN;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AccountStatus status = AccountStatus.ACTIVE;
+
     @OneToMany(mappedBy = "admin", cascade = CascadeType.ALL)
     private List<Library> libraries = new ArrayList<>();
+
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 
     public Long getId() {
         return id;
@@ -84,29 +107,46 @@ public class Admin {
         this.libraries = libraries;
     }
 
+    public AdminRole getRole() {
+        return role;
+    }
+
+    public void setRole(AdminRole role) {
+        this.role = role;
+    }
+
+    public AccountStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(AccountStatus status) {
+        this.status = status;
+    }
+
     @Override
     public String toString() {
+
         return "Admin{" +
                 "id=" + id +
                 ", name='" + name + '\'' +
                 ", phone='" + phone + '\'' +
-                ", password='" + password + '\'' +
-                ", otp='" + otp + '\'' +
-                ", otpExpiry=" + otpExpiry +
-                ", libraries=" + libraries +
+                ", role=" + role +
+                ", status=" + status +
                 '}';
     }
 
     public Admin() {
     }
 
-    public Admin(Long id, String name, String phone, String password, String otp, LocalDateTime otpExpiry, List<Library> libraries) {
+    public Admin(Long id, List<Library> libraries, AccountStatus status, AdminRole role, LocalDateTime otpExpiry, String otp, String name, String phone, String password) {
         this.id = id;
+        this.libraries = libraries;
+        this.status = status;
+        this.role = role;
+        this.otpExpiry = otpExpiry;
+        this.otp = otp;
         this.name = name;
         this.phone = phone;
         this.password = password;
-        this.otp = otp;
-        this.otpExpiry = otpExpiry;
-        this.libraries = libraries;
     }
 }

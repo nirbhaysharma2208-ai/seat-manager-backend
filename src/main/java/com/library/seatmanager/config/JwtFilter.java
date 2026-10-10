@@ -67,44 +67,41 @@ public class JwtFilter implements Filter {
                 // ADMIN
                 // =================================================
 
-                if ("ADMIN".equals(userType)) {
+                if ("OWNER".equals(userType)) {
 
                     authorities.add(
-                            new SimpleGrantedAuthority(
-                                    "ROLE_ADMIN"
-                            )
-                    );
-                }
-
-                // =================================================
-                // EMPLOYEE
-                // =================================================
-
-                else if ("EMPLOYEE".equals(userType)) {
-
-                    // ---------------------------------------------
-                    // Common employee authority
-                    // ---------------------------------------------
-
-                    authorities.add(
-                            new SimpleGrantedAuthority(
-                                    "ROLE_EMPLOYEE"
-                            )
+                            new SimpleGrantedAuthority("ROLE_OWNER")
                     );
 
-                    // ---------------------------------------------
-                    // Actual employee role
-                    // ---------------------------------------------
+                } else if ("ADMIN".equals(userType)) {
 
-                    if (role != null && !role.isBlank()) {
+                    // Preserve compatibility with existing Admin tokens.
+                    if ("OWNER".equals(role)) {
 
                         authorities.add(
-                                new SimpleGrantedAuthority(
-                                        "ROLE_" + role
-                                )
+                                new SimpleGrantedAuthority("ROLE_OWNER")
+                        );
+
+                    } else {
+
+                        authorities.add(
+                                new SimpleGrantedAuthority("ROLE_ADMIN")
+                        );
+                    }
+
+                } else if ("EMPLOYEE".equals(userType)) {
+
+                    authorities.add(
+                            new SimpleGrantedAuthority("ROLE_EMPLOYEE")
+                    );
+
+                    if (role != null && !role.isBlank()) {
+                        authorities.add(
+                                new SimpleGrantedAuthority("ROLE_" + role)
                         );
                     }
                 }
+
 
                 // =================================================
                 // CREATE AUTHENTICATION

@@ -55,6 +55,7 @@ package com.library.seatmanager.config;
 import com.library.seatmanager.entity.Admin;
 import com.library.seatmanager.entity.Employee;
 
+import com.library.seatmanager.entity.admin.Owner;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -84,36 +85,39 @@ public class JwtUtil {
     }
 
 
-    // =========================================================
-    // ADMIN TOKEN
-    // =========================================================
+public String generateAdminToken(Admin admin) {
 
-    public String generateAdminToken(Admin admin) {
+    return Jwts.builder()
 
-        return Jwts.builder()
+            .setSubject(admin.getPhone())
 
-                .setSubject(admin.getPhone())
+            .claim("userType", "ADMIN")
 
-                .claim("userType", "ADMIN")
+            .claim("userId", admin.getId())
 
-                .claim("userId", admin.getId())
+            .claim(
+                    "role",
+                    admin.getRole() != null
+                            ? admin.getRole().name()
+                            : "ADMIN"
+            )
 
-                .setIssuedAt(new Date())
+            .setIssuedAt(new Date())
 
-                .setExpiration(
-                        new Date(
-                                System.currentTimeMillis()
-                                        + EXPIRATION_TIME
-                        )
-                )
+            .setExpiration(
+                    new Date(
+                            System.currentTimeMillis()
+                                    + EXPIRATION_TIME
+                    )
+            )
 
-                .signWith(
-                        getSigningKey(),
-                        SignatureAlgorithm.HS256
-                )
+            .signWith(
+                    getSigningKey(),
+                    SignatureAlgorithm.HS256
+            )
 
-                .compact();
-    }
+            .compact();
+}
 
 
     // =========================================================
@@ -154,6 +158,28 @@ public class JwtUtil {
                         SignatureAlgorithm.HS256
                 )
 
+                .compact();
+    }
+
+
+    public String generateOwnerToken(Owner owner) {
+
+        return Jwts.builder()
+                .setSubject(owner.getEmail())
+                .claim("userType", "OWNER")
+                .claim("userId", owner.getId())
+                .claim("role", "OWNER")
+                .setIssuedAt(new Date())
+                .setExpiration(
+                        new Date(
+                                System.currentTimeMillis()
+                                        + EXPIRATION_TIME
+                        )
+                )
+                .signWith(
+                        getSigningKey(),
+                        SignatureAlgorithm.HS256
+                )
                 .compact();
     }
 

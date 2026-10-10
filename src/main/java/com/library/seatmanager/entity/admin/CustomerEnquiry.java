@@ -47,4 +47,27 @@ public class CustomerEnquiry {
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
+
+    private String source;
+
+    private String assignedTo;
+
+    @Column(length = 2000)
+    private String notes;
+
+    @PrePersist
+    protected void onCreate() {
+
+        if (status == null) {
+            status = EnquiryStatus.NEW;
+        }
+
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }
